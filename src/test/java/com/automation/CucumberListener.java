@@ -23,7 +23,9 @@ import java.util.stream.Collectors;
 
 public class CucumberListener implements ConcurrentEventListener {
     public static String stepName;
-    AtomicInteger atomicInteger = new AtomicInteger(1);
+    private final ThreadLocal<AtomicInteger> executedScenariosCount = ThreadLocal.withInitial(AtomicInteger::new);
+    private final ThreadLocal<String> previousFeatureFile = ThreadLocal.withInitial(() -> "");
+    private final ThreadLocal<String> currentFeatureFile = ThreadLocal.withInitial(() -> "");
     @Override
     public void setEventPublisher(EventPublisher eventPublisher) {
 
@@ -46,18 +48,16 @@ public class CucumberListener implements ConcurrentEventListener {
         System.out.println("FEATURE FILE PATH : " + featureLocation);
     }
 
-    List<String> tempTestCaseList = new ArrayList<>();
-    String previousFeatureFile = null;
-    private String currentFeatureFile = null;
+;
     int totalScenarios = 0;
     private void testCaseStarted(TestCaseStarted testCaseStarted) {
 
-        currentFeatureFile = testCaseStarted.getTestCase().getUri().toString();
+        currentFeatureFile.set(testCaseStarted.getTestCase().getUri().toString());
 
-        if (!currentFeatureFile.equals(previousFeatureFile)) {
-            System.out.println("NEW FEATURE FILE STARTED: " + currentFeatureFile);
-            previousFeatureFile = currentFeatureFile;
-            atomicInteger.set(1);
+        if (!currentFeatureFile.get().equals(previousFeatureFile.get())) {
+            System.out.println("NEW FEATURE FILE STARTED: " + currentFeatureFile.get());
+            previousFeatureFile.set(currentFeatureFile.get());
+            executedScenariosCount.get().set(1);
         }
 
         List<String> tags = testCaseStarted.getTestCase().getTags().stream().parallel().collect(Collectors.toList());
@@ -67,15 +67,27 @@ public class CucumberListener implements ConcurrentEventListener {
             customTagExpression = new CustomTagExpression(tag);
         }
 
+        System.out.println("customTagExpression " + customTagExpression);
         CommandlineOptionsParser commandlineoptionsParser = new CommandlineOptionsParser(System.out);
-        RuntimeOptions runtimeoptions = commandlineoptionsParser
-                .parse(currentFeatureFile)
-                .addDefaultGlueIfAbsent()
-                .addDefaultFeaturePathIfAbsent()
-                .addTagFilter(customTagExpression)
-                .addDefaultSummaryPrinterIfNotDisabled()
-                .enablePublishPlugin()
-                .build();
+        RuntimeOptions runtimeoptions;
+        if (customTagExpression == null){
+            runtimeoptions = commandlineoptionsParser
+                    .parse(currentFeatureFile.get())
+                    .addDefaultGlueIfAbsent()
+                    .addDefaultFeaturePathIfAbsent()
+                    .addDefaultSummaryPrinterIfNotDisabled()
+                    .enablePublishPlugin()
+                    .build();
+        }else {
+            runtimeoptions = commandlineoptionsParser
+                    .parse(currentFeatureFile.get())
+                    .addDefaultGlueIfAbsent()
+                    .addDefaultFeaturePathIfAbsent()
+                    .addTagFilter(customTagExpression)
+                    .addDefaultSummaryPrinterIfNotDisabled()
+                    .enablePublishPlugin()
+                    .build();
+        }
         FeatureParser parser = new FeatureParser(UUID::randomUUID);
         FeaturePathFeatureSupplier featureSupplier = new FeaturePathFeatureSupplier(ClassLoaders::getDefaultClassLoader, runtimeoptions, parser);
         Predicate<Pickle> filter = new Filters(runtimeoptions);
@@ -85,10 +97,9 @@ public class CucumberListener implements ConcurrentEventListener {
                 .count();
         totalScenarios = (int) countOfPickles;
 
-        String featureFileName = currentFeatureFile.substring(currentFeatureFile.indexOf(':') + 1);
-        tempTestCaseList.add(featureFileName);
+        String featureFileName = currentFeatureFile.get().substring(currentFeatureFile.get().indexOf(':') + 1);
 
-        System.out.println(System.lineSeparator() + "[" + atomicInteger.getAndIncrement() + "] STARTING SCENARIO : " + testCaseStarted.getTestCase().getName() + " #" + featureFileName + ":" + testCaseStarted.getTestCase().getLocation().getLine());
+        System.out.println(System.lineSeparator() + "[" + executedScenariosCount.get().getAndIncrement() + "] STARTING SCENARIO : " + testCaseStarted.getTestCase().getName() + " #" + featureFileName + ":" + testCaseStarted.getTestCase().getLocation().getLine());
         System.out.println("TAGS PRESENT : " + tags);
     }
 
@@ -140,13 +151,13 @@ public class CucumberListener implements ConcurrentEventListener {
         String strTestName = testCaseFinished.getTestCase().getName();
         System.out.println("FINISHED SCENARIO : " + strTestName);
 
-        int executedScenarios = (atomicInteger.get() - 1);
+        int executedScenarios = (executedScenariosCount.get().get() - 1);
         System.out.println("executedScenarios  " + executedScenarios);
 
         System.out.println("totalScenarios  " + totalScenarios);
 
         if (executedScenarios == totalScenarios) {
-            System.out.println("FEATURE FILE COMPLETED: " + currentFeatureFile);
+            System.out.println("FEATURE FILE COMPLETED: " + currentFeatureFile.get());
         }
 
         switch (testCaseFinished.getResult().getStatus()) {
@@ -179,7 +190,6 @@ public class CucumberListener implements ConcurrentEventListener {
 
     private void afterTestRun(TestRunFinished testRunFinished) {
         System.out.println("END Of TEST CASE : " + testRunFinished.getResult());
-        System.out.println("END Of TEST CASE ");
     }
 
     static class CustomTagExpression implements Expression {

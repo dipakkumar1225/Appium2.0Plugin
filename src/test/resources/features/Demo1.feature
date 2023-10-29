@@ -15,6 +15,17 @@ Feature: Demo 1
       | <Data> | <UserName> | <Password> |
     When scenario condition 1 : 2
     Then scenario assertion 1 : 2
+
+    @Sanity
+    Examples:
+      | Data | UserName | Password   |
+      | 1234 | user123  | userpwd123 |
+      | 1234 | user123  | userpwd123 |
+      | 1234 | user123  | userpwd123 |
+      | 1234 | user123  | userpwd123 |
+      | 1234 | user123  | userpwd123 |
+
+    @UAT
     Examples:
       | Data | UserName | Password   |
       | 1234 | user123  | userpwd123 |
